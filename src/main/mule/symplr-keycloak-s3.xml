@@ -1,0 +1,552 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:sqs="http://www.mulesoft.org/schema/mule/sqs"
+	xmlns:s3="http://www.mulesoft.org/schema/mule/s3"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/sqs http://www.mulesoft.org/schema/mule/sqs/current/mule-sqs.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+	<flow name="symplr-keycloak-s3-process"
+		doc:id="854596d6-f584-4894-a4f0-6b29e1f829b4">
+<!-- [STUDIO:"Receive messages"]		<sqs:receivemessages doc:name="Receive messages"
+			doc:id="3f0235e3-6e1e-4abc-bcf0-9f73b294dec3" frequency="60"
+			timeUnit="SECONDS"
+			queueUrl="${aws.queue_url}"
+			config-ref="Amazon_SQS_Configuration">
+			<reconnect />
+		</sqs:receivemessages> [STUDIO] -->
+		<try doc:name="Try" doc:id="0c76056b-9038-4e7a-bb8c-c587a671a2d3" >
+			<ee:transform doc:name="Transform Message" doc:id="3963707b-2051-44ed-a5c8-52bad381aa21">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="userMetaData"><![CDATA[%dw 2.0
+output application/json
+---
+read(payload,"application/json")]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+			<s3:get-object doc:name="Get  csv data" doc:id="bcd8bc7b-bc54-4c49-b0c2-9f3f236c389e" config-ref="Amazon_S3_Configuration" key="#[p('aws.key_prefix.incoming') ++ &quot;/&quot; ++ vars.userMetaData.keyName]" bucketName="${aws.bucket}" outputMimeType="application/csv" target="s3ObjectData" />
+			<ee:transform doc:name="Transform Message" doc:id="f3cec8e7-a3ea-4669-9b0b-84175200b318">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.s3ObjectData]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+			<set-variable value='#[%dw 2.0
+   
+import * from dw::core::Strings
+output text/plain
+var lastIndex = vars.userMetaData.keyName lastIndexOf("_")
+---
+substring(vars.userMetaData.keyName,0,lastIndex)]' doc:name="Get Key Name" doc:id="6730dceb-999c-4177-b183-4f0c76ca62d9" variableName="uploadType"/>
+			<set-variable value='#[output text/plain&#10;---     "Upload " ++ vars.uploadType]' doc:name="Email Subject" doc:id="f32debf0-9da7-42e1-9fc9-d4fd0758ff66" variableName="emailSubject" />
+			<set-variable value="#[vars.userMetaData.userInfo.email]" doc:name="Email Address" doc:id="9015e6be-a75d-4da2-8513-2bedf071403f" variableName="emailAddress" />
+			<parse-template doc:name="Email Body" doc:id="43216ef8-fa21-44c4-9611-8ad37c368dc1" location="emailTemplate.html" target="emailBody" />
+			<choice doc:name="Choice" doc:id="aef61a9b-af0e-40dc-9a9f-b2923bd2d680">
+			<when expression="#[vars.uploadType=='clearpasswords']">
+				<foreach doc:name="For Each" doc:id="acadb847-50cf-442b-9edc-b1c623431c86">
+					<ee:transform doc:name="User Activity Details Request" doc:id="ba6a7ad8-7219-45f7-a417-8452ce3b2317" >
+							<ee:message >
+							</ee:message>
+							<ee:variables >
+								<ee:set-variable variableName="userActivityDetailsData" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "activityID": vars.userMetaData.activityId as String,
+    "activityDetailType": "import clearpasswords",
+    "activityDescription": "import clearpasswords",
+    "isSuccess": "Yes",
+    "errorDescription": "",
+    "requestDetails": "",
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processStartdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"}
+  }
+}]]></ee:set-variable>
+							</ee:variables>
+						</ee:transform>
+						<flow-ref doc:name="User Activity Details" doc:id="e2d43108-011a-4209-a78d-b420f56b923a" name="sys-tm-utils-user-activity-details" target="sysUtilsActivityDetailsResponse"/>
+						<java:invoke-static method="clearCredentials(java.lang.String)" doc:name="Invoke static" doc:id="18a6f68a-3051-4e71-939f-38ed840c2797" class="symplr.clm.keycloak.KeycloakGroup">
+						<java:args><![CDATA[#["userName":payload.name]]]></java:args>
+					</java:invoke-static>
+				</foreach>
+			</when>
+			<when expression="#[vars.uploadType=='clearidentityproviders']">
+				<foreach doc:name="For Each" doc:id="807fa0a0-ffc4-4fc7-a9e1-b96888a27db3">
+					<java:invoke-static method="clearIdentityProvierbyEmail(java.lang.String)" doc:name="Invoke static" doc:id="be9c7ddd-9138-41d8-84a8-4b386b559cf5" class="symplr.clm.keycloak.KeycloakGroup">
+						<java:args><![CDATA[#["userName":payload.name]]]></java:args>
+					</java:invoke-static>
+				</foreach>
+			
+</when>
+<when expression="#[vars.uploadType=='assignUsersToGroup']">
+				<foreach doc:name="For Each" doc:id="0e47f767-9d91-4095-b001-0fda902e06e8">
+					<java:invoke-static method="addUser(java.lang.String,java.lang.String)" doc:name="Invoke static" doc:id="94026474-bcf0-4a9b-85af-46a96e78550e" class="symplr.clm.keycloak.KeycloakGroup">
+						<java:args><![CDATA[#[{"groupName":payload.groupName,"userName":payload.userName}]]]></java:args>
+					</java:invoke-static>
+				</foreach>
+			</when>
+<when expression="#[vars.uploadType=='removeUsersFromGroup']">
+				<foreach doc:name="For Each" doc:id="0787dd67-1030-4c53-a43b-42243850d1c9">
+					<java:invoke-static method="removeUser(java.lang.String,java.lang.String)" doc:name="Invoke static" doc:id="251b52d0-0ef4-402e-beb5-9a5d8f740dd8" class="symplr.clm.keycloak.KeycloakGroup">
+						<java:args><![CDATA[#[{"groupName":payload.groupName,"userName":payload.userName}]]]></java:args>
+					</java:invoke-static>
+				</foreach>
+			
+
+			
+</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Logger" doc:id="6fce4c87-192f-4ac5-a60b-98b2ef6af244" message="Not Found" />
+			</otherwise>
+		</choice>
+			<s3:create-object doc:name="Create csv file in processed " doc:id="0bb5a9bf-9b9d-49b2-a7a8-4a9ebfeebbbb" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.key_prefix.processed') ++ &quot;/&quot; ++ vars.userMetaData.keyName]">
+			<s3:object-content><![CDATA[#[vars.s3ObjectData]]]></s3:object-content>
+		</s3:create-object>
+			<s3:delete-object doc:name="Remove csv file from incoming" doc:id="98dab8b0-3d34-4ff8-91c8-88e7c70db10d" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.key_prefix.incoming') ++ &quot;/&quot; ++ vars.userMetaData.keyName]">
+			<reconnect />
+		</s3:delete-object>
+			<async doc:name="Async" doc:id="90336efc-97de-4c45-ae04-b6b5c7c5271c">
+			<flow-ref doc:name="Send Email" doc:id="efe60fb3-e06a-416c-baec-b48ce003bc52" name="sys-tm-utils-email" />
+		</async>
+			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="3a0cc308-9d79-40dd-bf88-65ddbc0d7f54" >
+					<logger level="INFO" doc:name="Logger" doc:id="9bc9e07d-f14f-407d-93a2-b3096573e435" message='"Error Processing csv file"' />
+					<s3:create-object doc:name="Create csv file in errrored" doc:id="64a75fc6-6a86-44f5-baff-79658d635612" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.key_prefix.errored') ++ &quot;/&quot; ++ vars.userMetaData.keyName]" />
+					<s3:delete-object doc:name="Remove csv file from incoming" doc:id="93e701c0-1308-4d10-ba26-414f915bd928" config-ref="Amazon_S3_Configuration" key="#[p('aws.key_prefix.incoming') ++ &quot;/&quot; ++ vars.userMetaData.keyName]" bucketName="${aws.bucket}" />
+					<flow-ref doc:name="Send Email" doc:id="1c31f8f7-ee6e-4400-aac7-f978ccf2da91" name="sys-tm-utils-email" />
+				</on-error-continue>
+			</error-handler>
+		</try>
+	</flow>
+	<flow name="symplr-keycloak-s3-import-user-main" doc:id="50b0307b-2e9a-4dfb-a0e3-d74426889d0b" >
+		<sqs:receivemessages doc:name="Receive messages" doc:id="1302d608-85e7-4220-82f3-6c6b08040c40" config-ref="Amazon_SQS_Configuration" frequency="0" timeUnit="SECONDS" queueUrl="${aws.queue_url}">
+			<reconnect />
+		</sqs:receivemessages>
+		<try doc:name="Try" doc:id="c0e3cfc4-69de-4896-8874-6ea015e675d1" >
+			<ee:transform doc:name="Transform Message" doc:id="1417838a-ad32-4cd7-9480-cd7f86e71907">
+			<ee:message>
+			</ee:message>
+				<ee:variables >
+					<ee:set-variable variableName="s3ImportUserMessage" ><![CDATA[%dw 2.0
+output application/json
+---
+read(payload,"application/json")]]></ee:set-variable>
+				</ee:variables>
+		</ee:transform>
+			<s3:get-object doc:name="Get User Metadata" doc:id="c47188ca-3176-41c9-a546-ba45bb5338bf" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.importuser.staging') ++ &quot;/&quot;++ vars.s3ImportUserMessage.metadata]" target="metaDataFileContent" />
+			<ee:transform doc:name="Meta Data" doc:id="6738acb0-d510-4b6f-a4c0-4f482e7d79d2">
+				<ee:message>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="userMetaDataResponse"><![CDATA[%dw 2.0
+output application/json
+---
+read(vars.metaDataFileContent,"application/json")]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+			<ee:transform doc:name="Group Details" doc:id="b87fc218-d250-4beb-b460-8460e03a951a">
+				<ee:message>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="groupDetails"><![CDATA[%dw 2.0
+output application/json
+var groupDetails = vars.userMetaDataResponse.keyCloakGroup splitBy  "-"
+---
+{
+	"client": groupDetails[0] default "",
+	"environment": groupDetails[1] default ""
+}]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+			<set-variable value="#[vars.userMetaDataResponse.activityId]" doc:name="Activity ID" doc:id="0af17ffb-d272-43b9-91d4-350e2a7d55e7" variableName="userActivityId" />
+			<ee:transform doc:name="Create User Batch Req" doc:id="d98c7703-16ef-4407-ac2a-6b684322b478">
+				<ee:message>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable resource="dwl/userActivityBatchDetails.dwl" variableName="userActivityBatchData" />
+				</ee:variables>
+			</ee:transform>
+			<flow-ref doc:name="Create Record in Activity Batch" doc:id="567ba612-5fb6-4b3f-909b-f74c4ac19bc0" name="sys-tm-utils-user-activity-batch" target="createBatchDetailsResponse"/>
+			<set-variable value="#[vars.createBatchDetailsResponse.generatedKeys.GENERATED_KEY]" doc:name="Batch ID" doc:id="d746c149-1d2d-43b3-8967-7e5c3cfd92f7" variableName="batchId"/>
+			<ee:transform doc:name="Create User Activity Details Req" doc:id="3c96cdbe-acfc-41fa-9f44-07bca1ee66d5">
+				<ee:message>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable resource="dwl/userActivityDetails.dwl" variableName="userActivityDetailsData" />
+				</ee:variables>
+			</ee:transform>
+			<flow-ref doc:name="Create Record in Activity Details" doc:id="fff73579-6571-49a8-9643-d10bc8f3432a" name="sys-tm-utils-user-activity-details" target="batchStartActivityDetailsInsert"/>
+			<set-variable value="#[vars.batchStartActivityDetailsInsert.generatedKeys.GENERATED_KEY]" doc:name="Activity Details ID" doc:id="fd461a2f-5e27-47d7-88fd-e479454cad25" variableName="activityDetailsBatchStartId"/>
+			<foreach doc:name="For Each" doc:id="5095f1e1-9640-4682-aa29-82a06f658f3a" collection='#[vars.s3ImportUserMessage.userFile]'>
+				<set-variable value="#[payload]" doc:name="Processing File Name" doc:id="f1c1ef9d-f47c-41a6-8756-cdfc2f29ddd6" variableName="processingFileName"/>
+				<flow-ref doc:name="Record Processing" doc:id="c6dfbdb7-8c39-45e2-b0c4-3d929b8edbb9" name="symplr-keycloak-s3-import-user-process" />
+				<s3:get-object doc:name="Get Processing File" doc:id="71787c4c-a3b3-4547-b6e3-ddb103c2b076" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.importuser.staging')++ &quot;/&quot;++ vars.processingFileName]" target="processingFileNameContent" outputMimeType="application/csv"/>
+				<ee:transform doc:name="Change Message Type" doc:id="525bc06c-e259-46b7-aa2e-eb5c383ae1d0" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="processingFileMoveContent" ><![CDATA[%dw 2.0
+output application/json
+---
+vars.processingFileNameContent]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<set-variable value='#[output text/plain&#10;---     "Import users"]' doc:name="Email Subject" doc:id="3f46ebba-2854-47eb-bda5-fddd58c6b1a1" variableName="emailSubject"/>
+				<set-variable value="#[vars.userMetaDataResponse.userInfo.email]" doc:name="Email Address" doc:id="dce5f79f-a8af-44c5-a939-0de502fc74ad" variableName="emailAddress"/>
+				<set-variable value='#[output text/plain
+---
+if (vars.s3FileLocation=="Processed") "Success" else "Failed"]' doc:name="Email Result" doc:id="1c289711-cf3a-4635-9eb6-50a7e36d3348" variableName="emailResult"/>
+				<parse-template doc:name="Parse Template" doc:id="a976c9e1-2bf1-4531-9076-bc0683cfe3b0" target="emailBody" location="emailTemplate-import-users.html"/>
+				<choice doc:name="Choice" doc:id="67a1cf68-a756-4d1c-a61f-8ac305b1fa6c" >
+					<when expression='#[vars.s3FileLocation=="Processed"]'>
+						<flow-ref doc:name="Emissary Service" doc:id="d13e9d58-060d-440b-8bdb-6ae28f6a68f7" name="symplr-keycloak-clm-emissary-request"/>
+						<choice doc:name="Choice" doc:id="1b525ba6-4c69-458f-9b72-d811d1307d9d">
+							<when expression='#[vars.emissaryserviceflowReference."tx-eid" != null]'>
+								<flow-ref doc:name="Create Keycloak User" doc:id="ada22db4-90ca-4131-9f34-268a1f3fab81" name="symplr-keycloak-s3-create-keycloak-user" target="createKeycloakUserFlowRef"/>
+								<set-variable value='#["Yes"]' doc:name="Is Success" doc:id="eda7a23c-682d-4f0a-bdaf-67cbed019208" variableName="isSuccess"/>
+								<s3:create-object doc:name="S3 Processed Directory" doc:id="20b84e51-8d02-4fc0-b8a6-f85e2427fa42" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[vars.userMetaDataResponse.s3ProcessingDirectory ++  vars.processingFileName]">
+							<s3:object-content><![CDATA[#[vars.processingFileNameContent]]]></s3:object-content>
+						</s3:create-object>
+								<async doc:name="Async" doc:id="67661b1d-6511-4845-9efe-4890fa4837d2">
+									<flow-ref doc:name="Send Success Email" doc:id="a194ff8b-5a7e-4b7f-9e62-f2dbd47aa81d" name="sys-tm-utils-email" />
+						</async>
+							</when>
+							<otherwise >
+								<set-variable value='#["No"]' doc:name="Is Success" doc:id="c55e3f7d-d4ee-404b-a0af-038b62f2da19" variableName="isSuccess"/>
+								<ee:transform doc:name="Activity Details Request" doc:id="489e67c7-8900-4f48-a999-30dced484bb4">
+									<ee:message>
+									</ee:message>
+									<ee:variables>
+										<ee:set-variable variableName="userActivityDetailsData"><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "activityID":vars.userActivityId as String,
+     "batchID":vars.batchId default 0,
+    "activityDetailType": "Import users",
+    "activityDescription": "Create Bulk Users using Emissary Services",
+    "isSuccess": "No",
+    "errorDescription": "Exception while creating users wit Emissary Services",
+    "requestDetails": write(payload,"application/json") as String,
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processStartdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "recordNum":"0"
+  }
+}]]></ee:set-variable>
+									</ee:variables>
+								</ee:transform>
+								<flow-ref doc:name="Activity Details Insert" doc:id="c63059af-1ae9-45fa-a52d-be0b653c8611" name="sys-tm-utils-user-activity-details" target="activityDetailsEmissaryServiceValidationError"/>
+								<flow-ref doc:name="Errored Flow" doc:id="1ac576e5-a32f-4fb9-88a5-d77375d18722" name="symplr-keycloak-s3-import-users-error"/>
+							</otherwise>
+						</choice>
+					</when>
+					<when expression='#[vars.s3FileLocation=="Errored"]'>
+						<set-variable value='#["No"]' doc:name="Is Success" doc:id="af82090a-0358-4a7d-a987-dea8f33fa213" variableName="isSuccess"/>
+						<flow-ref doc:name="Errored Flow" doc:id="18a8f1c0-eef4-470f-8658-6c23148783b6" name="symplr-keycloak-s3-import-users-error" />
+					
+					</when>
+					<otherwise >
+						
+				<logger level="INFO" doc:name="Logger" doc:id="8dde3d03-465a-447a-8c27-62a3ac3b71d4" message='"--- S3 Move File Location not found----"' />
+					</otherwise>
+				</choice>
+				<set-variable value='#["Yes"]' doc:name="Is Complete" doc:id="170ffe34-253f-4f46-b608-96bc50c52493" variableName="isComplete" />
+				<set-variable value='#[now() as String { format: "yyyy-MM-dd HH:mm:ss"}]' doc:name="Process End Date" doc:id="db71d1c0-21a4-4c79-95ce-81c48303fa50" variableName="processEndDate" />
+				<flow-ref doc:name="Update Activity Table" doc:id="6ec5ccc0-59ff-4ba0-bca3-4e20e1e20e46" name="sys-tm-utils-user-activity-update" target="activityUpdateResponseFlowRef" />
+				<s3:delete-object doc:name="Delete Processing File" doc:id="20a631d2-cdc8-4e2f-918e-da12ac06e56d" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.importuser.staging')++ &quot;/&quot;++ vars.processingFileName]" />
+		</foreach>
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="da8cf665-f15d-4402-aaf7-84c343d840de" >
+					<logger level="INFO" doc:name="Logger" doc:id="d4f581ff-7b54-4d9e-8185-028e26320175" message='"----Exception in Main For Loop----' />
+				</on-error-propagate>
+			</error-handler>
+		</try>
+	</flow>
+	<sub-flow name="symplr-keycloak-s3-import-user-process" doc:id="c115d4d6-844f-4363-9b94-5b327aa4ad88">
+		<try doc:name="Try" doc:id="63866bbf-f19c-475a-b4f2-f942f7faa076">
+			<s3:get-object doc:name="Get User File" doc:id="ba7040e2-a51f-4456-af10-b70b95bd66ee" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.importuser.staging') ++ &quot;/&quot; ++ payload]" outputMimeType="application/csv" target="userFileData" />
+			<ee:transform doc:name="Transform Message" doc:id="55a95662-d2c5-4098-a782-dd7c81461aa6">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.userFileData]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<set-variable value="#[sizeOf(payload)]" doc:name="Payload Size" doc:id="b77acf4b-81e5-4077-94a9-6dd516f0ffa4" variableName="paylodSize"/>
+			<foreach doc:name="For Each" doc:id="ef287431-3614-4338-b33b-ab73fb7550be" collection="#[payload]">
+				<choice doc:name="Choice" doc:id="fcbe0cc0-1d2a-4f0b-abe7-b4eba70034cc">
+					<when expression='#[payload.STATUS=="Enabled"]'>
+						<flow-ref doc:name="Validate User Details" doc:id="3102b1f5-95a6-4d85-8582-4a2b577a2f16" name="symplr-keycloak-s3-validate" />
+						<choice doc:name="Choice" doc:id="911eaefd-89cb-4e35-a788-2c3fddf8f37b">
+							<when expression="#[vars.isValidRecord==true and vars.isValidEmail==true]">
+								<set-variable value="#[output text/plain --- vars.userMetaDataResponse.keyCloakGroup]" doc:name="KeyCloak Group" doc:id="61746674-1ee7-48b8-8eec-872f8deeddb6" variableName="keyCloakGroup" />
+								<set-variable value="#[vars.counter]" doc:name="Record Number" doc:id="3779516b-9c6d-4ae5-a5d8-7a1dd061448f" variableName="recordNumberSuccess" />
+								<set-variable value='#["Processed"]' doc:name="S3 Processed Directory" doc:id="6daa5ac3-73cd-4b89-9606-103c837b5170" variableName="s3FileLocation" />
+						</when>
+							<otherwise>
+								<logger level="INFO" doc:name="Logger" doc:id="594f3920-023f-4347-8b54-6a32ba18a83e" message='"----Errored Record----"' />
+								<set-variable value="#[vars.counter]" doc:name="Record Number" doc:id="5e2b2bad-d003-4bfe-bf55-c1026e2af9b8" variableName="recordNumberError" />
+								<ee:transform doc:name="Activity Details Request" doc:id="e4b47b6f-dd92-4917-8a5b-16067ed9b2f2">
+									<ee:message>
+									</ee:message>
+									<ee:variables>
+										<ee:set-variable variableName="userActivityDetailsData"><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "activityID":vars.userActivityId as String,
+    "batchID":vars.batchId default 0,
+    "activityDetailType": "Import users",
+    "activityDescription": "Validate User First Name,Last Name,email",
+    "isSuccess": "No",
+    "errorDescription": if (not (vars.isValidRecord)) vars.emptyCheck.message  else if (not (vars.isVaildEmail default false)) "Invalid Email"  else "Invalid Data",
+    "requestDetails": write(payload,"application/json") as String,
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processStartdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "recordNum":vars.counter as String
+  }
+}]]></ee:set-variable>
+									</ee:variables>
+								</ee:transform>
+								<flow-ref doc:name="Activity Details Insert" doc:id="dce50136-68ed-4b63-b5d8-0d8e6988a71f" name="sys-tm-utils-user-activity-details" target="activityDetailsValidationFailed" />
+								<set-variable value='#["Errored"]' doc:name="S3 Errored Directory" doc:id="650935f2-9fb4-4fe8-abc5-8ff89d927e3a" variableName="s3FileLocation" />
+								<raise-error doc:name="Raise error" doc:id="073bfa6f-e5a9-48c5-81a4-95901b0842a0" type='"USER:INVALID_DATA"' description='"Invalid Data"' />
+							</otherwise>
+						</choice>
+					</when>
+					<otherwise>
+						<logger level="INFO" doc:name="Logger" doc:id="b105195e-cea2-49f0-97de-5ff92de12b14" message='"---User disabled skip Record for Processing---' />
+					</otherwise>
+				</choice>
+			</foreach>
+			<choice doc:name="Choice" doc:id="e0b9e184-8ee1-456c-8731-d97f31443f46" >
+				<when expression='#[vars.s3FileLocation=="Processed"]'>
+					<set-variable value="#[sizeOf(payload)]" doc:name="Succes Count" doc:id="6498a1d5-2eb6-4623-b487-b56b4ed3a5db" variableName="succesCount" />
+				</when>
+				<otherwise >
+					<set-variable doc:name="Failed Count" doc:id="b85c5371-3421-4c28-9e1f-2858eb7f3910" variableName="failedCount" value="#[0]"/>
+				</otherwise>
+			</choice>
+			<error-handler>
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="e17ef446-af80-46bb-8b59-2ceff7115717" type='"USER:INVALID_DATA"'>
+					<logger level="INFO" doc:name="Logger" doc:id="391f623c-fe5d-4d49-a2a3-f9d6a0210f93" message='"----Exception in inner For Loop----' />
+				</on-error-continue>
+			</error-handler>
+		</try>
+	</sub-flow>
+	<sub-flow name="symplr-keycloak-clm-emissary-request" doc:id="35795530-0798-454b-b2bd-21c835570286">
+		<ee:transform doc:name="Transform Message" doc:id="267a7f6b-55bd-4592-8908-a90ec7aff7f0">
+			<ee:message>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="emissaryServiceEmail" ><![CDATA[%dw 2.0
+import substring from dw::core::Strings
+output application/json
+var emailAddress= payload  map(value) -> p('emissaryservice.email_prefix') ++ value.EMAIL
+var queryCriteria= emailAddress reduce ((item, acc = "") -> acc ++  "'"
+ ++ item ++ "',") 
+var findIndex = queryCriteria lastIndexOf ","
+---
+substring(queryCriteria, 0, findIndex)]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<set-variable value='#["select external_id, id, email, name  from meditract.mulesoft_training.clm_user  where email in (" ++ vars.emissaryServiceEmail ++ ")"]' doc:name="Anaylytics SQL" doc:id="e9f5b715-2ec9-469e-b0ed-40881b339299" variableName="sql" />
+		<flow-ref doc:name="Analytics DB Query" doc:id="1820dc3b-be2d-47b3-9bc8-fdbae2c3ae85" target="analyticsDBQueryResponse" name="sys-tm-utils-datomic-select" />
+		<ee:transform doc:name="Emissary Request" doc:id="c0946e6f-396c-4ed1-95db-93440eb1208b">
+											<ee:message>
+											</ee:message>
+											<ee:variables>
+												<ee:set-variable variableName="emissaryServiceRequest"><![CDATA[%dw 2.0
+output application/json
+fun getUUID(email) = vars.analyticsDBQueryResponse.email find email
+---
+payload as Array map(value)-> {
+	    "user/customer-organizations":[{"group/id":"2c19b3af-a5b7-4b2f-88cb-9698d6707ff4"}],
+        "user/id":if(vars.analyticsDBQueryResponse[getUUID(p('emissaryservice.email_prefix') ++ value.EMAIL)[0]].id == null) uuid() else vars.analyticsDBQueryResponse[getUUID(p('emissaryservice.email_prefix') ++ value.EMAIL)[0]].id,
+        "user/given-name": value.FIRST_NAME,
+        "user/email": p('emissaryservice.email_prefix') ++ value.EMAIL,
+        "user/family-name": value.LAST_NAME,
+        "user/name": value.EMAIL
+}
+
+      
+       
+
+]]></ee:set-variable>
+											</ee:variables>
+										</ee:transform>
+		<ee:transform doc:name="Activity Details Request" doc:id="942e99cf-401b-4250-b2a5-105957b50f40">
+							<ee:message>
+							</ee:message>
+							<ee:variables>
+								<ee:set-variable variableName="userActivityDetailsData"><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "activityID":vars.userActivityId as String,
+     "batchID":vars.batchId,
+    "activityDetailType": "Import users",
+    "activityDescription": "Create Bulk Users using Emissary Services",
+    "isSuccess": "",
+    "errorDescription": "",
+    "requestDetails": write(vars.emissaryServiceRequest,"application/json") as String,
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processStartdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "recordNum":"0"
+  }
+}]]></ee:set-variable>
+							</ee:variables>
+						</ee:transform>
+		<flow-ref doc:name="Activity Details Insert" doc:id="dbff3972-1554-41eb-80c1-7ddfbe9e816c" name="sys-tm-utils-user-activity-details" target="activityDetailsBeforeEmissaryService" />
+		<flow-ref doc:name="Flow Reference" doc:id="f8a730e2-43d4-48ca-9f17-8076f264a95a" name="sys-tm-utils-emissary-request-submit" target="emissaryserviceflowReference" />
+	</sub-flow>
+	<sub-flow name="symplr-keycloak-s3-import-users-error" doc:id="10d7db7d-d3de-43ca-9e61-59182d21b87c" >
+		<s3:create-object doc:name="S3 Errored Directory" doc:id="2eba0280-c8f5-4814-bf3e-e710041b3dd3" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[vars.userMetaDataResponse.s3ErroredDirectory  ++ vars.processingFileName]">
+							<s3:object-content><![CDATA[#[vars.processingFileNameContent]]]></s3:object-content>
+						</s3:create-object>
+		<async doc:name="Async" doc:id="40393f98-f4e1-4260-9dd8-d469f027bf90" >
+			<flow-ref doc:name="Send Error Email" doc:id="e7f6f8d1-15d7-4fe7-b189-d907e3467092" name="sys-tm-utils-email" />
+		</async>
+	
+</sub-flow>
+	<sub-flow name="symplr-keycloak-s3-validate" doc:id="fe0eda5d-7743-43b0-a2c7-f1327eb6a074" >
+		<ee:transform doc:name="Empty Check" doc:id="eadaa39e-0966-403b-a895-d8866edb3137" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="emptyCheck" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message": if ( isEmpty(payload.FIRST_NAME ) ) "Invalid FIRST_NAME" 
+else if ( isEmpty(payload.LAST_NAME ) ) "Invalid LAST_NAME"
+else ""
+}
+]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="Required Fields Check" doc:id="1f610d6b-c67a-4968-92cd-bd8c209c76c5" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="isValidRecord" ><![CDATA[%dw 2.0
+output application/json
+---
+if (vars.emptyCheck.message == "Invalid FIRST_NAME" or vars.emptyCheck.message == "Invalid LAST_NAME" ) 
+	false
+else
+	true]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="Email Check" doc:id="8bbdbf18-d2ff-4191-8218-f98930cdeec1" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="isValidEmail" ><![CDATA[%dw 2.0
+output application/json
+var regexEmail = /^[^.][a-zA-Z0-9.!#$%&’*+\/=?^_`{|}~-]+@[a-zA-Z0-9-](?!.*?\.\.)[^_ ; ,<>\/\\]+(?:\.[a-zA-Z0-9-]+)[^.]*$/
+---
+
+if (payload.EMAIL matches regexEmail)  true
+else false]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="4b864479-b826-4ebd-a267-09aa8ea53887" message="#[payload]"/>
+	</sub-flow>
+	<sub-flow name="symplr-keycloak-s3-create-keycloak-user" doc:id="40011293-5e56-412c-999a-42ecce9ea5be" >
+		<foreach doc:name="For Each" doc:id="1d4be2de-ca87-48e7-9874-c8c011f3fa1d" collection="#[payload]">
+			<ee:transform doc:name="Create Keycloak Request" doc:id="efb48ae2-57cd-4652-9460-fdc3b617c806">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="createKeycloakBulkRequest"><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "email":payload.EMAIL,
+  "fullName":payload.FIRST_NAME ++ payload.LAST_NAME,
+  "groupName":vars.keyCloakGroup
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+			<logger level="INFO" doc:name="Logger" doc:id="a6285157-2233-4d64-a6bb-c5bc1ec0bab2" message="#[vars.createKeycloakBulkRequest]"/>
+			<java:invoke-static doc:name="Create KeyCloak User and Assign to Group" doc:id="ac4e2c96-f5e2-488e-ac1e-f3a00e8537e0" class="symplr.clm.keycloak.KeycloakGroup" method="createUserAndAssignGroup(java.lang.String,java.lang.String,java.lang.String)">
+			<java:args><![CDATA[#[vars.createKeycloakBulkRequest]]]></java:args>
+		</java:invoke-static>
+			<logger level="INFO" doc:name="Logger" doc:id="c3efc277-4c83-4430-854d-c1a1ac845641" message="#[payload]" />
+		</foreach>
+		<ee:transform doc:name="Activity Details Request" doc:id="a616682f-43cd-4a7a-810f-46975783210b">
+									<ee:message>
+									</ee:message>
+									<ee:variables>
+										<ee:set-variable variableName="userActivityDetailsData"><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "activityID":vars.userActivityId as String,
+     "batchID":vars.batchId,
+    "activityDetailType": "Import users",
+    "activityDescription": "Create Bulk Users in Keycloak",
+    "isSuccess": "",
+    "errorDescription": "",
+    "requestDetails": write(payload,"application/json") as String,
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processStartdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "recordNum":"0"
+  }
+}]]></ee:set-variable>
+									</ee:variables>
+								</ee:transform>
+		<flow-ref doc:name="Activity Details Insert" doc:id="3e9b5718-3b9b-4b4e-ae55-b9598bcd3267" name="sys-tm-utils-user-activity-details" target="activityDetailsBeforeCreateKeycloakUser" />
+	</sub-flow>
+
+</mule>

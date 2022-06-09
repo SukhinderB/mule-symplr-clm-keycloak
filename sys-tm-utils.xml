@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<sub-flow name="sys-tm-utils-email" doc:id="e60e47a3-47cc-411b-8956-d618d2aa6eab" >
+		<http:request method="POST" doc:name="emailSend" doc:id="b1ef7b6d-0f48-43a2-ac16-25a26d316df0" url="#[p('utils.host') ++ &quot;/api/email/send&quot;]" target="emailSend" responseTimeout="#[60000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo" : {
+        "secretId"   : p('utils.secretId'),
+        "secretPass" : p('utils.secretPass')
+    },
+    "data" : {
+        "emailSubject" : vars.emailSubject,
+        "emailBody"    : vars.emailBody,
+        "emailAddress" : [vars.emailAddress]
+    }
+}]]]></http:body>
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>		
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-authenticate-secret" doc:id="36af387a-3e79-4852-840f-77495eb39855" >
+		<http:request method="POST" doc:name="tokens" doc:id="e85ef120-897f-44fc-a9b4-aa32f4eb0711" url="#[p('utils.host') ++ &quot;/api/keycloak/login/mule&quot;]" target="tokens" responseTimeout="#[60000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+	secretId   : p('utils.secretId'),
+	secretPass : p('utils.secretPass'),
+	realm      : vars.currentConfig.app.realm default ""
+}]]]></http:body>
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>
+
+		
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-authenticate-user" doc:id="b067ec06-cedf-4a60-ba5c-099302c1e296" >
+		<http:request method="POST" doc:name="tokens" doc:id="9744539d-d045-4667-b4d4-3340c552fbf2" url="#[p('utils.host') ++ &quot;/api/keycloak/login/user&quot;]" target="tokens" responseTimeout="#[60000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+	username : vars.keycloakUsername,
+	password : vars.keycloakPassword
+}]]]></http:body>
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-access" doc:id="71c1935b-9561-4581-8290-cc056597b426" >
+		<try doc:name="Try" doc:id="a33ad0e5-d997-4c47-8bec-74bae07581b2" >
+			<http:request method="POST" doc:name="accessInfo" doc:id="1d66440e-529b-4f6c-a54b-5a5526ea8688" url="#[p('utils.host') ++ &quot;/api/keycloak/access&quot;]" target="accessInfo" responseTimeout="#[60000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo" : {
+        "accessToken" : (attributes.headers.authorization splitBy(" "))[1] default ""
+    },
+    "data": {
+        "client" : vars.client default ""
+    }
+}]]]></http:body>
+			<http:headers><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>
+			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="5f3127cc-0849-4978-801a-b1741dcf28a9" >
+					<ee:transform doc:name="accessInfo" doc:id="ec171f12-a918-4d23-9ea2-cff2edf4e15c" >
+						<ee:message >
+						</ee:message>
+						<ee:variables >
+							<ee:set-variable variableName="accessInfo" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+        status: 400,
+        isAuthenticated: false,
+        isAllowed: false,
+        message: error.description
+}]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+				</on-error-continue>
+			</error-handler>
+		</try>
+		<set-variable value="#[vars.accessInfo.isAuthenticated]" doc:name="isAuthenticated" doc:id="bdb3aafe-0c2f-4d81-8651-d27f14044827" variableName="isAuthenticated"/>
+		<set-variable value="#[vars.accessInfo.isAllowed]" doc:name="isAllowed" doc:id="afea3e64-0405-4771-b440-948770970f52" variableName="isAllowed"/>		
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-loggedInInfo" doc:id="8ab8a67f-7fb4-48fe-8cc9-4a19a4d03af2" >
+		<flow-ref doc:name="sys-tm-utils-authenticate-secret" doc:id="ef00f0ca-7514-4bff-9a77-acd6cac8f7d6" name="sys-tm-utils-authenticate-secret"/>
+		<until-successful maxRetries="5" doc:name="Until Successful" doc:id="c682f1a1-f2db-4591-a185-03aa880433a3" millisBetweenRetries="6000">
+			<http:request method="POST" doc:name="loggedInInfo" doc:id="3a45cdcc-51a2-416d-ac09-7ba3ca3093f8" config-ref="MT2" path='#["/auth/c/" ++ vars.tenant as String ++ "/logged-in"]' target="loggedInInfo" responseTimeout="#[60000]" />
+		</until-successful>
+	
+</sub-flow>
+	<sub-flow name="sys-tm-utils-refresh-tokens" doc:id="6c13b61e-a9de-4acf-9ab3-e8f88881fd21" >
+		<http:request method="POST" doc:name="tokens" doc:id="43bd4a3e-c355-4c6a-9910-9a0ffa89f085" url="#[p('utils.host') ++ &quot;/api/keycloak/refresh&quot;]" target="tokens" responseTimeout="#[60000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo" : {
+        "refreshToken" : vars.keycloakToken
+    }
+}]]]></http:body>
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>		
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-newrelic-publish" doc:id="f1413917-ea04-483b-bc7c-0972c0e6e1f2" >
+		<try doc:name="Try" doc:id="6739522a-1eb0-4c82-9351-580bf71b8e4d" >
+			<http:request method="POST" doc:name="New Relic Publish" doc:id="bd43a55a-3f0e-4703-af67-9d70eb3b2722" url="#[p('utils.host') ++ &quot;/api/newrelic/event/publish&quot;]" responseTimeout="#[60000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo" : {
+        "secretId"   : p('utils.secretId'),
+        "secretPass" : p('utils.secretPass')
+    },
+    "data" : vars.nrEvent
+}]]]></http:body>
+			<http:headers><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>
+			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="7f20a4df-6877-4405-8782-7bec677d351e" >
+					<logger level="INFO" doc:name="Logger" doc:id="041087e0-39f6-4e87-b1b2-6cc944dfacc1" message='#["Error publishing event : "]'/>
+					<logger level="INFO" doc:name="Logger" doc:id="a70b1043-fc6f-4e7f-a55d-760078ebe8ba" message="#[output application/json --- vars.nrEvent]"/>
+				</on-error-continue>
+			</error-handler>
+		</try>
+		
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-newrelic-query" doc:id="3c89f1aa-2490-473d-a627-52207c536e2f" >
+		<http:request method="POST" doc:name="newRelicData" doc:id="73d18aac-8747-424e-9e9f-ac20b84e55ec" url="#[p('utils.host') ++ &quot;/api/newrelic/event/query&quot;]" target="newRelicData" responseTimeout="#[60000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo" : {
+        "secretId"   : p('utils.secretId'),
+        "secretPass" : p('utils.secretPass')
+    },
+    "data" : {
+    	"nrsql" : vars.nrsql
+    }
+}]]]></http:body>
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>
+		
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-collections-upsert" doc:id="6ef81af9-1873-43cc-9178-ca4dd5520a66" >
+		<http:request method="POST" doc:name="collectionsResult" doc:id="c1ec29e5-9449-4905-88c8-c327015d081d" url="#[p('utils.host') ++ &quot;/api/collections/upsert&quot;]" target="collectionsResult" responseTimeout="#[30000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo" : {
+        "secretId"   : p('utils.secretId'),
+        "secretPass" : p('utils.secretPass')
+    },
+    "collection" : vars.collectionName,
+    "key" : vars.collectionKey,
+    "data" : vars.collectionData
+}]]]></http:body>
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-collections-publish" doc:id="80951710-0cbf-4668-9547-90cf88486f8f" >
+		<http:request method="POST" doc:name="collectionsResult" doc:id="f32af4b1-ac53-4634-875d-b1437b4054d7" url="#[p('utils.host') ++ &quot;/api/collections/publish&quot;]" target="collectionsResult" responseTimeout="#[30000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo" : {
+        "secretId"   : p('utils.secretId'),
+        "secretPass" : p('utils.secretPass')
+    },
+    "collection" : vars.collectionName,
+    "key" : vars.collectionKey,
+    "data" : vars.collectionData
+}]]]></http:body>
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-collections-query" doc:id="3db97a9f-566b-4121-9100-c90de085d9d1" >
+		<http:request method="POST" doc:name="collectionsResult" doc:id="9b339a09-37d7-4bf9-8416-46ced2e0e489" url="#[p('utils.host') ++ &quot;/api/collections/query&quot;]" target="collectionsResult" responseTimeout="#[30000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo" : {
+        "secretId"   : p('utils.secretId'),
+        "secretPass" : p('utils.secretPass')
+    },
+    "collection" : vars.collectionName,
+    "since" : vars.collectionSince default "",
+    "id" : vars.collectionId default ""
+}]]]></http:body>
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-datomic-select" doc:id="61543015-28a3-49ef-8be4-24f29d21a0ad" >
+		<http:request method="POST" doc:name="dbOutput" doc:id="96b0d47f-6725-4029-ab59-eec5624f9289" url="#[p('utils.host') ++ &quot;/api/datomic/select&quot;]" target="dbOutput" responseTimeout="#[300000]">
+			<reconnect />
+			<http:body><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo" : {
+        "secretId"   : p('utils.secretId'),
+        "secretPass" : p('utils.secretPass')
+    },
+    "data" : {
+    	"sql" : vars.sql
+    }
+}]]]></http:body>
+			<http:headers><![CDATA[#[output application/java
+---
+{
+    "Content-Type" : "application/json"
+}]]]></http:headers>
+		
+</http:request>
+		
+	</sub-flow>
+	<sub-flow name="sys-tm-utils-analytics" doc:id="f8f35263-a915-4963-a6c4-335f7fb116f1" >
+		<db:insert doc:name="Insert" doc:id="0446db23-8abe-4673-8f56-21bd0db53246" />
+	</sub-flow>
+		
+	
+</mule>

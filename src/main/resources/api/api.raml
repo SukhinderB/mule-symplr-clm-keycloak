@@ -1,0 +1,19 @@
+#%RAML 1.0
+title: Keycloak API Specification
+version: v1
+baseUri: https://localhost:8082/api
+documentation:
+  - title: Getting Started
+    content: |
+      This sample API has been created as part of your APIkit project.
+/keycloak/group/export:
+  displayName: Teams
+  #description: |
+  #A collection of teams that are participating in La Liga. Teams API allow you add, remove and retrieve individual team information from La Liga.
+  get:
+    description: Obtain information from a collection of teams simultaneously
+
+    responses:
+      200:
+        body:
+          application/json:

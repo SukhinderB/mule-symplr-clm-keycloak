@@ -1,0 +1,957 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracing="http://www.mulesoft.org/schema/mule/tracing" xmlns:sqs="http://www.mulesoft.org/schema/mule/sqs"
+	xmlns:s3="http://www.mulesoft.org/schema/mule/s3"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:java="http://www.mulesoft.org/schema/mule/java" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/sqs http://www.mulesoft.org/schema/mule/sqs/current/mule-sqs.xsd
+http://www.mulesoft.org/schema/mule/tracing http://www.mulesoft.org/schema/mule/tracing/current/mule-tracing.xsd">
+	<flow name="symplr-clm-keycloak-exportsubgroup" doc:id="773f4e76-f992-4d8c-a124-6a08e2ab4b42" >
+		<http:listener doc:name="/keycloak/group/export" doc:id="089cb892-2759-46f1-aab3-80d06fb99183" config-ref="HTTPS_Listener_config1" path="/keycloak/group/export">
+			<http:response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:response>
+			<http:error-response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<flow-ref doc:name="symplr-keycloak-api-authenticate" doc:id="a2aa6498-6bb7-4db5-a34f-edf8f13e7552" name="symplr-keycloak-api-authenticate"/>
+		<choice doc:name="IsUserAllowed" doc:id="a178a5e7-502e-4d90-9880-50bc02566de3" >
+			<when expression="#[vars.isAllowed == true]">
+				<java:invoke-static doc:name="Export Group" doc:id="c16117ca-4403-4ee9-8651-14409ac1834f" class="symplr.clm.keycloak.KeycloakGroup" method="export()" />
+				<ee:transform doc:name="Export group Response" doc:id="faf92a37-d1c3-46e9-bf9b-8ffcfc8f775d">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/csv quoteValues = true
+---
+payload as Array map(item)->{
+	"Group Name:":item.name
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+				<set-variable value='"activity"' doc:name="Set Variable" doc:id="3d2fe7e3-8eae-4c14-87ba-7960aa7e893a" variableName="activityType"/>
+				<ee:transform doc:name="User Activity Request" doc:id="73e1d101-86a8-4860-b2c2-8316e8c51573">
+					<ee:message>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="userActivityData" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "sessionID": "J56565KKKKK;",
+    "emailAddress": vars.userInfo.email,
+    "name": vars.userInfo.name,
+    "activityType": "export group",
+    "source": "mulesoft",
+    "fileName":"",
+    "isComplete": "",
+    "healthSystemTenant": "sContracts",
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "applicationName": "sContract Tooling",
+    "processStartDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+     "client": "mulesoft",
+     "environment": "training"
+
+  }
+  
+  }]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<async doc:name="Async" doc:id="5908a666-871d-48aa-9d64-375aa655ce06" >
+					<flow-ref doc:name="User activity" doc:id="e07ffedd-29a6-49ae-97a3-d7d3ff87f70f" name="sys-tm-utils-user-activity" />
+				</async>
+			</when>
+			<otherwise>
+				<flow-ref doc:name="symplr-keycloak-api-authentication-error" doc:id="5456b9f5-d23f-4ec9-bee1-451252569e89" name="symplr-keycloak-api-authentication-error"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="symplr-keycloak-creategroup" doc:id="a6d267f6-52fe-42aa-b7b8-e2483918490a" >
+		<http:listener doc:name="/keycloak/group/create" doc:id="e44b168a-dc75-4e29-b26b-ede7ec048c1e" config-ref="HTTPS_Listener_config1" path="/keycloak/group/create">
+			<http:response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:response>
+			<http:error-response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<flow-ref doc:name="symplr-keycloak-api-authenticate" doc:id="f04b3f1c-f1f9-4177-af56-ade2dce296a9" name="symplr-keycloak-api-authenticate"/>
+		<choice doc:name="IsUserAllowed" doc:id="2df6409e-9297-4286-9a06-4cc15e01c8aa" >
+			<when expression="#[vars.isAllowed == true]">
+				<java:invoke-static doc:name="Create Group" doc:id="0d831e51-cdec-442e-b4ea-6f87fe0c5d37" class="symplr.clm.keycloak.KeycloakGroup" method="createKeycloakGroup(java.lang.String)">
+			<java:args><![CDATA[#["groupName":payload.groupName]]]></java:args>
+		</java:invoke-static>
+				<ee:transform doc:name="Create Group Response" doc:id="b0378acc-fa36-44b7-9960-7f88096dc58e">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+var groupMessage=payload as String
+output application/json
+---
+if ( groupMessage == "OK: Group exists" ) {
+	message: "Group exists"
+}
+else {
+	message: "Group created"
+}
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+				<ee:transform doc:name="User Activity Request" doc:id="8fda59c0-b3b0-43b0-9c70-fcf9073b96e9">
+					<ee:message>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="userActivityData" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "sessionID": "J56565KKKKK;",
+    "emailAddress": vars.userInfo.email,
+    "name": vars.userInfo.name,
+    "activityType": "create group",
+    "source": "mulesoft",
+    "fileName":"",
+    "isComplete": "",
+    "healthSystemTenant": "sContracts",
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "applicationName": "sContract Tooling",
+    "processStartDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+     "client": "mulesoft",
+     "environment": "training"
+
+  }
+ }]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<async doc:name="Async" doc:id="66ed5ec8-14f2-4f70-a6f5-a4759ab4160c" >
+					<flow-ref doc:name="User Activity" doc:id="77767242-d45b-47f3-b8e5-a97d24e2bf71" name="sys-tm-utils-user-activity" />
+				</async>
+			</when>
+			<otherwise>
+				<flow-ref doc:name="symplr-keycloak-api-authentication-error" doc:id="b4f89627-e614-48ac-a051-40c859193e69" name="symplr-keycloak-api-authentication-error"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="symplr-keycloak-api-clearprovider-email" doc:id="701aefb5-2125-4ad1-80b7-dc75ebb2c292" >
+		<http:listener doc:name="/keycloak/provider/email" doc:id="ae0cf8f9-eeb4-4f05-9b98-aa82fcfaa9d3" config-ref="HTTPS_Listener_config1" path="/keycloak/provider/email">
+			<http:response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:response>
+			<http:error-response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<flow-ref doc:name="symplr-keycloak-api-authenticate" doc:id="16b4fc0c-016d-4fa5-8838-1d3e249ae39a" name="symplr-keycloak-api-authenticate"/>
+		<choice doc:name="IsUserAllowed" doc:id="00a71c66-ef0f-4661-a481-29fa122a4a42" >
+			<when expression="#[vars.isAllowed == true]">
+				<java:invoke-static doc:name="Clear Indentity Provider by Email" doc:id="b6be8837-eb40-44bf-af43-bb7c4aa8a25c" class="symplr.clm.keycloak.KeycloakGroup" method="clearIdentityProvierbyEmail(java.lang.String)">
+					<java:args ><![CDATA[#["userName":attributes.queryParams.'userName']]]></java:args>
+				</java:invoke-static>
+				<ee:transform doc:name="Provider Response" doc:id="cc28b538-785c-4f2e-b7fc-15d2a02d60df" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+
+var response=payload as String
+output application/json
+---
+if ( response == "ERROR: User not found" ) {
+	message: "User not found"
+}
+else {
+	message: "Users cleared"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<ee:transform doc:name="Transform Message" doc:id="217bedd4-6d44-42c3-b752-ce162272ea9d">
+					<ee:message>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="userActivityData" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "sessionID": "J56565KKKKK;",
+    "emailAddress": vars.userInfo.email,
+    "name": vars.userInfo.name,
+    "activityType": "clear provider email",
+    "source": "mulesoft",
+    "fileName":"",
+    "isComplete": "",
+    "healthSystemTenant": "sContracts",
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "applicationName": "sContract Tooling",
+    "processStartDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+     "client": "mulesoft",
+     "environment": "training"
+
+  }
+ }]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<async doc:name="Async" doc:id="c359e411-040f-4b9a-b1cf-d09c556f1c1b" >
+					<flow-ref doc:name="User Activity" doc:id="27503758-793c-4011-b231-814cdc75563b" name="sys-tm-utils-user-activity" />
+				</async>
+			</when>
+			<otherwise >
+				<flow-ref doc:name="symplr-keycloak-api-authentication-error" doc:id="d94cbf4a-ea46-4dc9-b913-8df3b39d89f3" name="symplr-keycloak-api-authentication-error"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="symplr-keycloak-api-purge-provider-group" doc:id="d2e2491a-6e53-41a6-9a0c-6a1e5159b8cc" >
+		<http:listener doc:name="/keycloak/provider/group/purge" doc:id="5458e562-cc9f-4331-91ca-bb6483d37587" config-ref="HTTPS_Listener_config1" path="/keycloak/provider/group/purge">
+			<http:response>
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:response>
+			<http:error-response>
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<flow-ref doc:name="symplr-keycloak-api-authenticate" doc:id="7f62f83b-0845-4125-8d1e-9e204f28547a" name="symplr-keycloak-api-authenticate"/>
+		<choice doc:name="IsUserAllowed" doc:id="349e32a2-56f7-41e1-bb31-485b1a055450" >
+			<when expression="#[vars.isAllowed == true]">
+				<java:invoke-static doc:name="Purge Provider by Group Name" doc:id="3e87d849-d1de-41ff-abc5-d18aaf848af7" class="symplr.clm.keycloak.KeycloakGroup" method="purgeProviderByGroup(java.lang.String)">
+					<java:args ><![CDATA[#["groupName":attributes.queryParams.'groupName']]]></java:args>
+				</java:invoke-static>
+				<ee:transform doc:name="Purge Response" doc:id="13558a68-23a1-49af-9c4d-83dfc69fc70e" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+var response=payload as String default ""
+output application/json
+---
+if ( response =="OK" ) {
+	message: "Purge success"
+}
+else {
+	message: "Group not found or No users to Purge"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<ee:transform doc:name="Create Activity Request" doc:id="5fdc7b59-714f-4bab-be14-089d6a2cd509" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="userActivityData" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "sessionID": "J56565KKKKK;",
+    "emailAddress": vars.userInfo.email,
+    "name": vars.userInfo.name,
+    "activityType": "purge provier group",
+    "source": "mulesoft",
+    "fileName":"",
+    "isComplete": "",
+    "healthSystemTenant": "sContracts",
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "applicationName": "sContract Tooling",
+    "processStartDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+     "client": "mulesoft",
+     "environment": "training"
+
+  }
+ }]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<async doc:name="Async" doc:id="66cb1c7f-e53d-4b1b-a2d9-608aa280ecf6" >
+					<flow-ref doc:name="User Activity" doc:id="f275a3ac-3862-4030-a690-d5e7f808cd58" name="sys-tm-utils-user-activity" />
+				</async>
+			</when>
+			<otherwise >
+				<flow-ref doc:name="symplr-keycloak-api-authentication-error" doc:id="f6e0ffac-039d-458b-b160-5f1afc12241b" name="symplr-keycloak-api-authentication-error"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="symplr-keycloak-api-clearcredentails-user" doc:id="c6586a69-983a-4d40-ad07-4077b9fc965e" >
+		<http:listener doc:name="/keycloak/clear/credentials/user" doc:id="48e3ef4c-3a54-42be-b911-049088cce4d9" config-ref="HTTPS_Listener_config1" path="/keycloak/clear/credentials/user">
+			<http:response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:response>
+			<http:error-response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<flow-ref doc:name="symplr-keycloak-api-authenticate" doc:id="b56d9149-3119-441d-902c-f32b756ab7cc" name="symplr-keycloak-api-authenticate"/>
+		<choice doc:name="IsUserAllowed" doc:id="27405e36-0ac9-43c9-8e22-79baa20f42b7" >
+			<when expression="#[vars.isAllowed == true]">
+				<set-payload value="#[%dw 2.0&#10;output multipart/form-data boundary='34b21'&#10;--- payload]" doc:name="Set Payload" doc:id="689aa518-4c06-4c94-b359-a8f872624cd9" />
+				<set-variable value="#[output text/plain --- attributes.queryParams.'keyName']" doc:name="User activity type" doc:id="d5899b1f-cb14-4a50-ba8c-b972280e623f" variableName="userActivityType" />
+				<set-variable value='#[output text/plain --- payload.parts.users.headers."Content-Disposition".filename]' doc:name="User File Name" doc:id="76bcc16f-03cc-4ddb-b037-da3b08e91652" variableName="userFileName" />
+				<set-variable value='"activity"' doc:name="Activity Details" doc:id="90f13880-a38c-4a57-8f5b-a527a93264df" variableName="activityType" />
+				<ee:transform doc:name="User Activity Request" doc:id="9cd7f0ab-79a8-4695-aa63-6e54501fe5b2">
+					<ee:message>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="userActivityData"><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "sessionID": "J56565KKKKK;",
+    "emailAddress": vars.userInfo.email,
+    "name": vars.userInfo.name,
+    "activityType": "clear credential user",
+    "source": "mulesoft",
+    "fileName":"",
+    "isComplete": "",
+    "healthSystemTenant": "sContracts",
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "applicationName": "sContract Tooling",
+    "processStartDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+     "client": "mulesoft",
+     "environment": "training"
+
+  }
+ }]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<flow-ref doc:name="User Activity" doc:id="6ce6cad7-bb6d-4708-880d-e7bc8f5da8fe" name="sys-tm-utils-user-activity" target="sysUtilsResponse" />
+				<set-variable value="#[vars.sysUtilsResponse.generatedKeys.GENERATED_KEY]" doc:name="User activity Response" doc:id="dacf414f-9e75-49b0-a8a7-144ba4c1e708" variableName="acitvityResponseID" />
+				<ee:transform doc:name="Get CSV File Content" doc:id="944f4db3-e3eb-41fe-881a-42861bdb385c">
+					<ee:message>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="csvdata" ><![CDATA[output application/csv
+---
+payload.parts.users.content
+	]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<set-variable value="#[attributes.queryParams.'keyName' ++ &quot;_&quot; ++ now() as Number ++ &quot;.csv&quot;]" doc:name="Key Name" doc:id="dc8ec7c9-b61b-4610-a61c-5bcab6330d0f" variableName="keyName"/>
+				<s3:create-object doc:name="Create Users data" doc:id="a09facb5-212d-4021-9467-0f085386649c" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.key_prefix.incoming') ++&quot;/&quot;++ vars.keyName]">
+					<s3:object-content ><![CDATA[#[vars.csvdata]]]></s3:object-content>
+				</s3:create-object>
+				<ee:transform doc:name="Create MetaData Request" doc:id="1e514634-a1c2-44b8-85fb-9acfa381cf4b">
+					<ee:message>
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  'activityId':vars.acitvityResponseID,
+  'userFileName':vars.userFileName,
+  'keyName':vars.keyName,
+  'clientName':vars.tenant,
+  'customer_role':vars.customer_role,
+  'tenant':vars.tenant,
+  'tenantName':vars.tenantName,
+  'userInfo':vars.userInfo
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables >
+					</ee:variables>
+				</ee:transform>
+				<ee:transform doc:name="Create SQS Request" doc:id="28baf28f-e783-4d3d-9892-73f1909b36de">
+					<ee:message>
+						<ee:set-payload><![CDATA[{
+	delaySeconds: 0,
+	body: payload.^raw as String,
+	messageAttributes: {
+		"AccountId": {
+			"stringValue" : "000123456",
+			"dataType" : "String.AccountId"
+		} as Object {
+			class: "org.mule.extension.sqs.api.model.MessageAttributeValue"
+		},
+		"NumberId": {
+			"stringValue" : "230.000000000000000001",
+			"dataType" : "Number"
+		} as Object {
+			class : "org.mule.extension.sqs.api.model.MessageAttributeValue"
+		}
+	} as Object {
+		class: "java.util.HashMap"
+	}
+} as Object {
+	class: "org.mule.extension.sqs.api.model.Message"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<try doc:name="Try" doc:id="1af5d715-fb92-44b0-bc19-5ccd6f343c55" >
+					<sqs:send-message doc:name="Send message" doc:id="b8e5d36a-04cd-4830-8efe-0ff9e9847163" config-ref="Amazon_SQS_Configuration" queueUrl='${aws.queue_url}' target="sendMessage">
+					<reconnect />
+				</sqs:send-message>
+					<error-handler >
+						<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="5ef7ade4-ef18-4c5b-85b7-9f81b87f7f58" >
+							<logger level="INFO" doc:name="Logger" doc:id="86c0f7ed-abdf-4f7a-b8b6-2b7d62e42418" message="#[error.detailedDescription]"/>
+						</on-error-propagate>
+					</error-handler>
+				</try>
+				<ee:transform doc:name="Clear Credentials Response" doc:id="cea70f17-14a9-439e-9ab4-3918782f7a1f">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message":"csv file uploaded"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<flow-ref doc:name="symplr-keycloak-api-authentication-error" doc:id="1046c75e-2f59-45ca-9b05-489d3cc22b6a" name="symplr-keycloak-api-authentication-error"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="symplr-keycloak-remove-user" doc:id="ea2e31f7-ba79-48b3-9373-78e12cdd99e7" >
+		<http:listener doc:name="/keycloak/group/user/remove" doc:id="cdf35207-5be4-41cf-bb8c-9bc9fd0ecd33" config-ref="HTTPS_Listener_config1" path="/keycloak/group/user/remove">
+			<http:response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:response>
+			<http:error-response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<flow-ref doc:name="symplr-keycloak-api-authenticate" doc:id="4273d4a8-30de-4440-96f3-1f2df9952cbf" name="symplr-keycloak-api-authenticate"/>
+		<choice doc:name="Choice" doc:id="8e07e037-4fa4-4544-b345-107ff458283e" >
+			<when expression="#[vars.isAllowed == true]">
+				<java:invoke-static doc:name="Invoke static" doc:id="d3de159d-aa85-4a31-bd53-c3e1c12910db" class="symplr.clm.keycloak.KeycloakGroup" method="removeUser(java.lang.String,java.lang.String)">
+					<java:args ><![CDATA[#[{"groupName":payload.groupName,"userName":payload.userName}]]]></java:args>
+				</java:invoke-static>
+				<ee:transform doc:name="Transform Message" doc:id="8146976a-ee2b-445b-b4e7-4c199d2d063f" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message":"user removed"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<ee:transform doc:name="User Activity Request" doc:id="278c939c-4f91-4be8-9987-6ba75005c8c0">
+					<ee:message>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="userActivityData" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "sessionID": "J56565KKKKK;",
+    "emailAddress": vars.userInfo.email,
+    "name": vars.userInfo.name,
+    "activityType": "remove user from group",
+    "source": "mulesoft",
+    "fileName":"",
+    "isComplete": "",
+    "healthSystemTenant": "sContracts",
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "applicationName": "sContract Tooling",
+    "processStartDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+     "client": "mulesoft",
+     "environment": "training"
+
+  }
+ }]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<async doc:name="Async" doc:id="7c0c4881-5c99-4e4d-b4c6-056eee8f09c0" >
+					<flow-ref doc:name="sys-tm-utils-user-activity" doc:id="b20e0d0f-4470-48a6-bcac-cf0ea0bbabbd" name="sys-tm-utils-user-activity"/>
+				</async>
+			</when>
+			<otherwise >
+				<flow-ref doc:name="symplr-keycloak-api-authentication-error" doc:id="306a16fe-82f2-4036-a605-bd547ec0902a" name="symplr-keycloak-api-authentication-error"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="symplr-keycloak-api-assign-user" doc:id="475486e0-1ee8-43b1-bbd1-ee172f1dac3f" >
+		<http:listener doc:name="/keycloak/group/user/add" doc:id="467f1fc1-7d1d-4984-a3ff-23f499a44b85" config-ref="HTTPS_Listener_config1" path="/keycloak/group/user/add">
+			<http:response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:response>
+			<http:error-response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<flow-ref doc:name="symplr-keycloak-api-authenticate" doc:id="fa67a79b-812c-474d-b543-fa89feddcea8" name="symplr-keycloak-api-authenticate"/>
+		<choice doc:name="Choice" doc:id="527482a9-6cf0-4674-9145-c1c926f33252" >
+			<when expression="#[vars.isAllowed == true]">
+				<java:invoke-static doc:name="Invoke static" doc:id="80c60150-aa40-4477-8a77-99328d44d4f3" class="symplr.clm.keycloak.KeycloakGroup" method="addUser(java.lang.String,java.lang.String)">
+					<java:args ><![CDATA[#[{"groupName":payload.groupName,"userName":payload.userName}]]]></java:args>
+				</java:invoke-static>
+				<ee:transform doc:name="Transform Message" doc:id="1c1f12b3-e299-4027-b575-2e4397b147d0" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message":"user added to group"
+}
+]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<ee:transform doc:name="User Activity Request" doc:id="50a528f7-1457-4a11-9caf-1af910c1a257" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="userActivityData" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "sessionID": "J56565KKKKK;",
+    "emailAddress": vars.userInfo.email,
+    "name": vars.userInfo.name,
+    "activityType": "assign user to group",
+    "source": "mulesoft",
+    "fileName":"",
+    "isComplete": "",
+    "healthSystemTenant": "sContracts",
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "applicationName": "sContract Tooling",
+    "processStartDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+     "client": "mulesoft",
+     "environment": "training"
+
+  }
+ }]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<async doc:name="Async" doc:id="fdeda6e5-c9be-4e34-9859-75d091a5aff2" >
+					<flow-ref doc:name="sys-tm-utils-user-activity" doc:id="e9aff842-ffd4-41ab-abeb-50859b9c311d" name="sys-tm-utils-user-activity"/>
+				</async>
+			</when>
+			<otherwise >
+				<flow-ref doc:name="symplr-keycloak-api-authentication-error" doc:id="9d7d260d-de4c-450a-bade-dbfcd56a3f02" name="symplr-keycloak-api-authentication-error"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="symplr-keycloak-api-import-user" doc:id="4adf287b-2f9c-4a9c-b5a6-b9d063efed8c" >
+		<http:listener doc:name="/import/user" doc:id="c2f92fdd-3336-4e10-aa57-3a8131674608" config-ref="HTTPS_Listener_config1" path="/import/user">
+			<http:response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:response>
+			<http:error-response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<flow-ref doc:name="symplr-keycloak-api-authenticate" doc:id="f5c2f4ab-70eb-474e-9630-2f98ad1b2494" name="symplr-keycloak-api-authenticate"/>
+		<choice doc:name="Choice" doc:id="324590e3-d18c-420d-a9f2-caf18b9cf973" >
+			<when expression="#[vars.isAllowed == true]">
+				<try doc:name="Try" doc:id="6383008f-c1ee-4b54-8e5a-80ee222938a9">
+			<set-payload value="#[%dw 2.0&#10;output multipart/form-data boundary='34b21'&#10;--- payload]" doc:name="Set Payload" doc:id="4a210d23-e6a6-445e-9ffc-639c0e39df98" />
+					<set-variable value='#[output text/plain --- payload.parts.users.headers."Content-Disposition".filename]' doc:name="User File name" doc:id="d459b506-b6f7-4e53-bcd9-c4ec471be382" variableName="userFileName"/>
+					<ee:transform doc:name="Group Details" doc:id="304210ea-e135-4265-9fb1-99d95d96223b">
+						<ee:message>
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable variableName="groupDetails"><![CDATA[%dw 2.0
+output application/json
+var groupDetails = attributes.queryParams.'groupName' splitBy  "-" 
+---
+{
+	"client": groupDetails[0] default "",
+	"environment": groupDetails[1] default ""
+}]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<ee:transform doc:name="Create User Activity Req" doc:id="d4758efa-de68-477d-95fb-89d753dd9b49" >
+						<ee:message >
+						</ee:message>
+						<ee:variables >
+							<ee:set-variable variableName="userActivityData" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "sessionID": vars.userSessionId,
+    "emailAddress":  vars.userInfo.email,
+    "name": vars.userInfo.name,
+    "activityType": "Import users",
+    "source": "mulesoft",
+    "fileName": vars.userFileName,
+    "isComplete": "No",
+    "healthSystemTenant":vars.tenant,
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "applicationName": "sContract Tooling",
+    "processStartDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+     "client": vars.groupDetails.client,
+     "environment": vars.groupDetails.environment
+
+  }
+}]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<flow-ref doc:name="Create Record in Activity" doc:id="3cfb7ee4-4792-4def-b110-1db62c36e42a" name="sys-tm-utils-user-activity" target="createUserActivityResponse"/>
+					<set-variable value="#[vars.createUserActivityResponse.generatedKeys.GENERATED_KEY]" doc:name="Get Activity ID" doc:id="7ad046b0-801a-4236-a8e0-86be733b0d5e" variableName="userActivityId"/>
+					<ee:transform doc:name="Create Activity Details Req" doc:id="ace94656-e60f-4e90-be10-5a3b66f3df29" >
+						<ee:message >
+						</ee:message>
+						<ee:variables >
+							<ee:set-variable resource="dwl/userActivityDetails.dwl" variableName="userActivityDetailsData" />
+						</ee:variables>
+					</ee:transform>
+					<flow-ref doc:name="Create Activity Details Record" doc:id="b895262f-202c-47b6-9ba5-0b8ca6cc6a5d" name="sys-tm-utils-user-activity-details" target="createUserActivityDetailsResponse"/>
+					<set-variable value="#[vars.createUserActivityDetailsResponse.generatedKeys.GENERATED_KEY]" doc:name="Activity Details ID" doc:id="529eee9c-e461-4fc3-894e-71c93a4731a8" variableName="activityDetailsIdImport"/>
+					<set-variable value="#[output text/plain --- p('aws.importuser.processed') ++ &quot;/&quot; ++ vars.client ++ &quot;/training&quot; ++ &quot;/Import users/&quot; ++ vars.userActivityId ++ &quot;/Processed/&quot;]" doc:name="S3 Processing File Directory" doc:id="71457aaa-0726-44be-8516-38ebe2e4c859" variableName="s3ProcessingDirectory"/>
+					<set-variable value="#[output text/plain --- p('aws.importuser.processed') ++ &quot;/&quot; ++ vars.client ++ &quot;/training&quot; ++ &quot;/Import users/&quot; ++ vars.userActivityId ++ &quot;/Errored/&quot;]" doc:name="S3 Errored File Directory" doc:id="e040cada-badc-45e3-836d-ba0c1a6be0d4" variableName="s3ErroredDirectory"/>
+					<set-variable value='#[output text/plain --- "sContracts-importusers-" ++ vars.userActivityId ++ ".csv"]' doc:name="Rename user file" doc:id="2a2c5f83-9759-4172-b8e4-c4da8c74c370" variableName="fileName"/>
+					<set-variable value='#[output text/plain --- "sContracts-importusers-" ++ vars.userActivityId ++ ".meta"]' doc:name="User Metadata file name" doc:id="1ff0e96c-78ab-4776-ab2d-7dbfc5fa3ba6" variableName="metaDataFileName"/>
+					<ee:transform doc:name="Get CSV File Content" doc:id="6cd58ac3-af90-457b-9149-7b28dc996903" >
+						<ee:message >
+						</ee:message>
+						<ee:variables >
+							<ee:set-variable variableName="importUserscsvData" ><![CDATA[output application/csv
+---
+payload.parts.users.content]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<s3:create-object doc:name="Create User file in Staging" doc:id="7f010398-2c34-4d16-bd4a-dc958e34f88d" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.importuser.staging') ++ &quot;/&quot; ++ vars.fileName]" target="s3importUserData">
+						<s3:object-content ><![CDATA[#[vars.importUserscsvData]]]></s3:object-content>
+					</s3:create-object>
+					<s3:create-object doc:name="Create Processing Directory" doc:id="075e2e4f-171f-4d84-9a16-f1c196f13d11" config-ref="Amazon_S3_Configuration" target="createDirectoryResponse" bucketName="${aws.bucket}" key="#[vars.s3ProcessingDirectory]"/>
+					<s3:create-object doc:name="Create Errored Directory" doc:id="31357f1e-4630-4ecf-9c31-c7b9446ef5f4" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[vars.s3ErroredDirectory]" target="createErrorDirectoryResponse"/>
+					<ee:transform doc:name="Create User Metadata" doc:id="10d00815-e7cc-423d-ba35-15b7f4bb1d32">
+						<ee:message>
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable variableName="importUserMetaData"><![CDATA[%dw 2.0
+output application/json
+---
+{
+  'sessionId':vars.userSessionId,
+  'activityId':vars.userActivityId,
+  'activityDetailsId':vars.activityDetailsIdImport,
+  'userFileName':vars.userFileName,
+  'keyCloakGroup':attributes.queryParams.'groupName',
+  'activityClientName':vars.groupDetails.client,
+  'activityEnvironment':vars.groupDetails.environment,
+  's3ProcessingDirectory':vars.s3ProcessingDirectory,
+  's3ErroredDirectory':vars.s3ErroredDirectory,
+  'keyName':"",
+  'clientName':vars.tenant,
+  'customer_role':vars.customer_role,
+  'tenant':vars.tenant,
+  'tenantName':vars.tenantName,
+  'userInfo':vars.userInfo
+}]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<s3:create-object doc:name="Create Metadata file" doc:id="c8012358-3269-4726-a06c-63807067bfdc" config-ref="Amazon_S3_Configuration" bucketName="${aws.bucket}" key="#[p('aws.importuser.staging') ++ &quot;/&quot; ++ vars.metaDataFileName]" target="createMetaDataFileResponse">
+						<s3:object-content><![CDATA[#[vars.importUserMetaData]]]></s3:object-content>
+					</s3:create-object>
+					<ee:transform doc:name="Create Metadata Message" doc:id="e168ef40-ee11-4d4e-bb02-242324bac570" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+
+	"metadata":vars.metaDataFileName,
+	"userFile":[vars.fileName]
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<ee:transform doc:name="Create SQS Request" doc:id="1d65ff2f-3a87-4169-b8a1-a74e599fc381" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	delaySeconds: 0,
+	body: payload.^raw as String,
+	messageAttributes: {
+		"AccountId": {
+			"stringValue" : "000123456",
+			"dataType" : "String.AccountId"
+		} as Object {
+			class: "org.mule.extension.sqs.api.model.MessageAttributeValue"
+		},
+		"NumberId": {
+			"stringValue" : "230.000000000000000001",
+			"dataType" : "Number"
+		} as Object {
+			class : "org.mule.extension.sqs.api.model.MessageAttributeValue"
+		}
+	} as Object {
+		class: "java.util.HashMap"
+	}
+} as Object {
+	class: "org.mule.extension.sqs.api.model.Message"
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<sqs:send-message doc:name="Send message" doc:id="dc879d8f-4191-4224-aa43-3c6924e287a8" config-ref="Amazon_SQS_Configuration" queueUrl="${aws.queue_url}"/>
+					<ee:transform doc:name="Import User Response" doc:id="3271373d-2abe-4ae3-91ba-2bc693523af8" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message":"Import users is submitted"
+}
+]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<error-handler>
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="39d2ae8d-121f-45be-ba40-0392a4443c27">
+					<ee:transform doc:name="Import User Error Response" doc:id="3c032f37-c83b-4101-852c-432be35307e2" >
+								<ee:message >
+									<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message":"Error in file importing!!!"
+}
+]]></ee:set-payload>
+								</ee:message>
+							</ee:transform>
+				</on-error-continue>
+			</error-handler>
+		</try>
+			</when>
+			<otherwise >
+				<flow-ref doc:name="symplr-keycloak-api-authentication-error" doc:id="baa280f1-fed4-422a-9f99-a0eecbf00516" name="symplr-keycloak-api-authentication-error"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="symplr-keycloak-api-keycloak-create-user" doc:id="bf28431b-4410-4783-a365-69c1ff0b724b" >
+		<http:listener doc:name="/keycloak/user/create" doc:id="cd077a5d-b0c6-4254-aa6b-4fe94ac1611a" config-ref="HTTPS_Listener_config1" path="/keycloak/user/create"/>
+		<java:invoke-static doc:name="Create Keycloak user" doc:id="ed79d769-28d9-4906-8cee-fa1a58e073a3" class="symplr.clm.keycloak.KeycloakGroup" method="createUser(java.lang.String,java.lang.String)">
+			<java:args><![CDATA[#[{
+  "email":payload.EMAIL,
+  "fullName":payload."FIRST_NAME" ++ payload.LAST_NAME
+}]]]></java:args>
+		</java:invoke-static>
+		<ee:transform doc:name="Transform Message" doc:id="34a9b9ef-a5bc-4e19-9746-549dd375df26" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<sub-flow name="symplr-keycloak-api-authenticate" doc:id="866c9060-3b79-467b-b496-8f06048a1fcd" >
+		<set-variable value="#[(attributes.headers.'client') default &quot;NONE&quot;]" doc:name="tenant" doc:id="89feae9f-3dbd-4910-b44a-68603dec2fcf" variableName="tenant"/>
+		<set-variable value="#[vars.tenant]" doc:name="client" doc:id="3e3aa86d-eb15-4304-917d-062c11be771c" variableName="client"/>
+		<set-variable value="#[vars.tenant]" doc:name="tenantName" doc:id="55a3e88c-3c78-42f5-9fb3-060444536b49" variableName="tenantName"/>
+		<set-variable value='#[(attributes.headers.authorization splitBy(" "))[1] default ""]' doc:name="access_key" doc:id="830c3578-89b0-4a32-9c88-f14fc8f568ac" variableName="access_key"/>
+		<set-variable value='#[output text/plain
+---
+attributes.headers.session_state]' doc:name="sessionId" doc:id="7ef6d602-7fcb-4e24-96a5-659e831e967e" variableName="userSessionId"/>
+		<ee:transform doc:name="Client  and Enviroment details to log in Activity table" doc:id="1469a79a-0850-4864-8a60-fbf3a83d3fe8" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="clientEnvironment" ><![CDATA[%dw 2.0
+output application/json
+var groupDetails = attributes.queryParams.'groupName' splitBy  "-" 
+---
+{
+	"client": groupDetails[0] default "",
+	"environment": groupDetails[1] default ""
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<try doc:name="Try" doc:id="5fedaf0d-a09f-4441-9a2d-77232fef3ae3" >
+			<http:request method="POST" doc:name="user_info" doc:id="4faf0bb2-e745-4c2f-ba7a-0ebea7d299e3" url="#[p('utils.host') ++ &quot;/api/keycloak/userinfo&quot;]" target="userInfo">
+				<http:body ><![CDATA[#[%dw 2.0
+
+output application/json
+
+---
+{
+    "accessInfo": {
+        "accessToken": vars.access_key
+    }
+}]]]></http:body>
+			</http:request>
+			<set-variable value="#[vars.userInfo.customer_role]" doc:name="customer_role" doc:id="bbd278a1-f3a0-4438-ba53-b7b2a61ebfcf" variableName="customer_role"/>
+			<ee:transform doc:name="isAllowed" doc:id="08803a06-9ac6-420a-983d-6b9cf995c7cf" >
+				<ee:message >
+				</ee:message>
+				<ee:variables >
+					<ee:set-variable variableName="isAllowed" ><![CDATA[%dw 2.0
+output application/json
+
+import * from dw::core::Arrays
+
+var keyCloakOutput=vars.userInfo
+
+var customerRoles = keyCloakOutput.customer_role default []
+
+var isAllowed = indexOf(customerRoles, "mt2-cust-" ++ vars.client) > -1
+
+---
+
+if ( isAllowed) true else false]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="82e0f66d-54c6-44c9-b995-6c0cdaf53a3e" >
+					<set-variable value="#[false]" doc:name="isAllowed" doc:id="c0b92b59-7415-442e-bc6f-8620f7f11ba4" variableName="isAllowed"/>
+				</on-error-continue>
+			</error-handler>
+		</try>
+	</sub-flow>
+	<sub-flow name="symplr-keycloak-api-authentication-error" doc:id="02811915-4e80-4a04-99fc-6503527f0ff5" >
+		<set-payload value='#[output application/json --- {"error" : "Invalid authentication or client headers"}]' doc:name="Authentication error" doc:id="95c4b331-d00c-4f36-b1ec-951ae34df6f2" />
+	</sub-flow>
+</mule>

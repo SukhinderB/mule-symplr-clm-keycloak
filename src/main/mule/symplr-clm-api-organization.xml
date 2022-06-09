@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<flow name="symplr-keycloak-api-fetch-organization" doc:id="f637c2aa-195a-4dc1-8078-abb5ff56fe11" >
+		<http:listener doc:name="Listener" doc:id="ae0760b7-0474-4c8a-a057-3c3768fc8867" config-ref="HTTPS_Listener_config1" path="/scontracts/organization">
+			<http:response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:response>
+			<http:error-response >
+				<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Access-Control-Allow-Origin" : "*",
+	"Access-Control-Allow-Methods" : "POST, GET,OPTIONS",
+	"Access-Control-Allow-Headers" : "Content-Type, Origin, Access-Control-Allow-Headers, Authorization, X-Requested-With, Client",
+	"Access-Control-Max-Age" : "3600"
+}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<flow-ref doc:name="Flow Reference" doc:id="37ac38ce-5992-4d68-b3aa-d5b4489cb2dd" name="symplr-keycloak-api-authenticate"/>
+		<choice doc:name="Choice" doc:id="88d6a830-52db-4a09-b2a5-cb8d88de97cf" >
+			<when expression="#[vars.isAllowed == true]">
+				<ee:transform doc:name="Activity Request" doc:id="e52dbfa9-49bb-430b-88d3-c317c6eadc13">
+					<ee:message>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="userActivityData" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "accessInfo": {
+    "accessToken": "",
+    "secretId": "",
+    "secretPass": ""
+  },
+  "data": {
+    "sessionID": vars.userSessionId,
+    "emailAddress":  vars.userInfo.email,
+    "name": vars.userInfo.name,
+    "activityType": "Export Organization",
+    "source": "mulesoft",
+    "fileName": "",
+    "isComplete": "",
+    "healthSystemTenant":vars.tenant,
+    "createdDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "applicationName": "sContract Tooling",
+    "processStartDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+    "processEndDate": now() as String { format: "yyyy-MM-dd HH:mm:ss"},
+     "client": vars.clientEnvironment.client,
+     "environment": vars.clientEnvironment.environment
+
+  }
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<flow-ref doc:name="Create Record in Activity" doc:id="41bd3919-a7bb-4632-a29f-b580abe3c3af" name="sys-tm-utils-user-activity" target="createUserActivityOrgResponse"/>
+				<flow-ref doc:name="Flow Reference" doc:id="2b3ad61d-42e0-4094-ae30-376b3b77516e" target="oranizationQueryResponse" name="symplr-keycloak-api-fetch-scontracts-organization" />
+				<ee:transform doc:name="Transform Message" doc:id="046e6fee-ff59-4392-ae45-1e145c03f5c0" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/csv quoteValues = true
+---
+vars.oranizationQueryResponse]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<flow-ref doc:name="symplr-clm-sync-error" doc:id="c3c4cfc0-d224-4d6d-b754-37f6f1a16fa2" name="symplr-keycloak-api-authentication-error"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<sub-flow name="symplr-keycloak-api-fetch-scontracts-organization" doc:id="0bc92a45-112d-4b74-b023-251f7209265b" >
+		<set-variable value='#[(vars.tenant as String) replace "-" with("_")]' doc:name="Tenant" doc:id="d7a215c8-4391-4f1b-a655-3091a25bf7ae" variableName="tenantName"/>
+		<set-variable value="#[&quot;select name,id from meditract.&quot; ++ vars.tenantName ++&quot;.clm_group where type_id in (select  db__id from meditract.&quot; ++ vars.tenantName ++&quot;.db__idents where ident =':group/organization')
+&quot;]" doc:name="Organization DB Query" doc:id="4b722556-77b5-4243-ae00-39e446c2a8e4" variableName="sql"/>
+		<logger level="INFO" doc:name="Logger" doc:id="7782bafe-ca7b-4415-a105-834cdc98e961" message="#[vars.sql]"/>
+		<flow-ref doc:name="Fetch Organization " doc:id="174b1224-8b84-4380-82fd-0799c5667a00" name="sys-tm-utils-datomic-select" target="dbOrganizationQueryResponse"/>
+		<ee:transform doc:name="Transform to csv" doc:id="0fcce728-bfb8-409b-a219-92549339e4c0">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/csv quoteValues = true
+---
+vars.dbOrganizationQueryResponse]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</sub-flow>
+</mule>

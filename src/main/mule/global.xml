@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:sqs="http://www.mulesoft.org/schema/mule/sqs"
+	xmlns:s3="http://www.mulesoft.org/schema/mule/s3"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/sqs http://www.mulesoft.org/schema/mule/sqs/current/mule-sqs.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<http:listener-config name="HTTPS_Listener_config1" doc:name="HTTP Listener config" doc:id="60374b6e-6c85-45ba-8880-7e18784aa2b8" >
+		<http:listener-connection host="0.0.0.0" port="8082" protocol="HTTPS">
+			<tls:context >
+				<tls:key-store type="jks" path="keystore.jks" keyPassword="password" password="password" />
+			</tls:context>
+		</http:listener-connection>
+	</http:listener-config>
+	<configuration-properties doc:name="Configuration properties" doc:id="f6fa66e0-1493-4a33-b454-262689e41912" file="config.yaml" />
+	<file:config name="File_Config" doc:name="File Config" doc:id="97e633d1-6e06-4883-b367-2283b602b39b" >
+		<file:connection workingDir="C:\" />
+	</file:config>
+	<s3:config name="Amazon_S3_Configuration" doc:name="Amazon S3 Configuration" doc:id="e838833a-9536-4cca-bb0e-bec1912bca0d" >
+		<s3:basic-connection accessKey="${aws.access_key_id}" secretKey="${aws.secret_access_key}" region="US_WEST_2"/>
+	</s3:config>
+	<sqs:config name="Amazon_SQS_Configuration" doc:name="Amazon SQS Configuration" doc:id="0f534ce5-e7ee-4259-b36a-6ffabbba896a" defaultQueueUrl="https://sqs.us-west-2.amazonaws.com/952221970209/mulesoft-dev-symplr-queue">
+		<sqs:basic-connection accessKey="${aws.access_key_id}" secretKey="${aws.secret_access_key}" testQueueArn='#["arn:aws:sqs:us-west-2:952221970209:mulesoft-dev-symplr-queue"]' region="us-west-2"/>
+	</sqs:config>
+</mule>
