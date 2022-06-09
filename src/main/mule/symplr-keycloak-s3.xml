@@ -219,6 +219,7 @@ if (vars.s3FileLocation=="Processed") "Success" else "Failed"]' doc:name="Email 
 				<parse-template doc:name="Parse Template" doc:id="a976c9e1-2bf1-4531-9076-bc0683cfe3b0" target="emailBody" location="emailTemplate-import-users.html"/>
 				<choice doc:name="Choice" doc:id="67a1cf68-a756-4d1c-a61f-8ac305b1fa6c" >
 					<when expression='#[vars.s3FileLocation=="Processed"]'>
+						<set-variable value="#[vars.userMetaDataResponse.tenant]" doc:name="Tenant " doc:id="6987b96d-aac6-4553-8497-652924264596" variableName="tenant"/>
 						<flow-ref doc:name="Emissary Service" doc:id="d13e9d58-060d-440b-8bdb-6ae28f6a68f7" name="symplr-keycloak-clm-emissary-request"/>
 						<choice doc:name="Choice" doc:id="1b525ba6-4c69-458f-9b72-d811d1307d9d">
 							<when expression='#[vars.emissaryserviceflowReference."tx-eid" != null]'>
@@ -387,21 +388,34 @@ substring(queryCriteria, 0, findIndex)]]></ee:set-variable>
 		</ee:transform>
 		<set-variable value='#["select external_id, id, email, name  from meditract.mulesoft_training.clm_user  where email in (" ++ vars.emissaryServiceEmail ++ ")"]' doc:name="Anaylytics SQL" doc:id="e9f5b715-2ec9-469e-b0ed-40881b339299" variableName="sql" />
 		<flow-ref doc:name="Analytics DB Query" doc:id="1820dc3b-be2d-47b3-9bc8-fdbae2c3ae85" target="analyticsDBQueryResponse" name="sys-tm-utils-datomic-select" />
+		<flow-ref doc:name="Get All Organization" doc:id="1f20988e-1a70-413b-bae1-3c9ff495e392" target="organizationResponse" name="symplr-keycloak-api-fetch-scontracts-organization"/>
+		<set-variable value="#[output application/json --- vars.organizationResponse]" doc:name="Organization Response" doc:id="45614040-d745-4a6e-a6b8-5625f7041681" variableName="organizationResponseData"/>
 		<ee:transform doc:name="Emissary Request" doc:id="c0946e6f-396c-4ed1-95db-93440eb1208b">
 											<ee:message>
 											</ee:message>
 											<ee:variables>
 												<ee:set-variable variableName="emissaryServiceRequest"><![CDATA[%dw 2.0
 output application/json
-fun getUUID(email) = vars.analyticsDBQueryResponse.email find email
+fun getUUID(email) =  vars.analyticsDBQueryResponse.email find email
+
+fun all(organization) = vars.organizationResponseData map (value) ->{
+		"group/id": value.id }
+		
+fun getOrganizationRequest(organization) = organization splitBy "|" map(item)-> { 
+
+    "group/id":vars.organizationResponseData[getOrganizationId(item)[0]].id
+}
+
+fun getOrganizationId(name) = vars.organizationResponseData.name find name
+
 ---
 payload as Array map(value)-> {
-	    "user/customer-organizations":[{"group/id":"2c19b3af-a5b7-4b2f-88cb-9698d6707ff4"}],
-        "user/id":if(vars.analyticsDBQueryResponse[getUUID(p('emissaryservice.email_prefix') ++ value.EMAIL)[0]].id == null) uuid() else vars.analyticsDBQueryResponse[getUUID(p('emissaryservice.email_prefix') ++ value.EMAIL)[0]].id,
-        "user/given-name": value.FIRST_NAME,
-        "user/email": p('emissaryservice.email_prefix') ++ value.EMAIL,
-        "user/family-name": value.LAST_NAME,
-        "user/name": value.EMAIL
+	"user/customer-organizations": if("ALL" == value.ORGANIZATION) all(value.ORGANIZATION) else getOrganizationRequest(value.ORGANIZATION),
+	"user/id": if ( sizeOf(vars.analyticsDBQueryResponse) > 0) vars.analyticsDBQueryResponse[getUUID(p('emissaryservice.email_prefix') ++ value.EMAIL)[0]].id else uuid(),
+	"user/given-name": value.FIRST_NAME,
+	"user/email": p('emissaryservice.email_prefix') ++ value.EMAIL,
+	"user/family-name": value.LAST_NAME,
+	"user/name": value.EMAIL
 }
 
       
@@ -410,6 +424,7 @@ payload as Array map(value)-> {
 ]]></ee:set-variable>
 											</ee:variables>
 										</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="5d5d8d2d-633b-414f-9cdb-933d38796d41" message="#[vars.emissaryServiceRequest]"/>
 		<ee:transform doc:name="Activity Details Request" doc:id="942e99cf-401b-4250-b2a5-105957b50f40">
 							<ee:message>
 							</ee:message>
